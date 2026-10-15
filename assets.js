@@ -13,5 +13,7 @@ export const MODELS = {
     : "https://cdn.humanatlas.io/digital-objects/ref-organ/lung-female/v1.4/assets/3d-vh-f-lung.glb",
   liver: local
     ? "models/liver.glb"
-    : "https://cdn.humanatlas.io/digital-objects/ref-organ/liver-female/v1.2/assets/3d-vh-f-liver.glb"
+    : "https://cdn.humanatlas.io/digital-objects/ref-organ/liver-female/v1.2/assets/3d-vh-f-liver.glb",
+  pancreas: "https://cdn.humanatlas.io/digital-objects/ref-organ/pancreas-female/v1.2/assets/3d-vh-f-pancreas.glb",
+  bladder: "https://cdn.humanatlas.io/digital-objects/ref-organ/urinary-bladder-female/v1.2/assets/3d-vh-f-urinary-bladder.glb"
 };

@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
-import { ORGANS, matchOrgan } from "./organs-catalog.js";
+import { ORGANS, LAYERS, matchOrgan, organLayer, allPins } from "./organs-catalog.js";
 import { MODELS } from "./assets.js";
 import { parts } from "./parts-data.js";
 
@@ -18,6 +18,11 @@ app.innerHTML = `
       <button type="button" class="back pill" id="back" hidden>Back to the body</button>
       <div class="title" id="title">Human Body Atlas</div>
       <div class="brand"><b>Human Body Atlas</b><span id="hint">Loading…</span></div>
+    </div>
+    <div class="layers" id="layers"></div>
+    <div class="search">
+      <input id="q" type="search" placeholder="Search any structure…" autocomplete="off">
+      <div class="hits" id="hits"></div>
     </div>
     <div id="pins"></div>
     <div class="callout pill-dark" id="callout" hidden></div>
@@ -37,8 +42,12 @@ const titleEl = app.querySelector("#title");
 const hintEl = app.querySelector("#hint");
 const backBtn = app.querySelector("#back");
 const dock = app.querySelector("#dock");
+const layersEl = app.querySelector("#layers");
+const searchInput = app.querySelector("#q");
+const hitsEl = app.querySelector("#hits");
 
 dock.innerHTML = ORGANS.map((o) => `<button type="button" data-organ="${o.id}">${o.title}</button>`).join("");
+layersEl.innerHTML = LAYERS.map((l) => `<button type="button" data-layer="${l.id}" class="on">${l.label}</button>`).join("");
 
 const state = {
   ready: false,
@@ -49,7 +58,9 @@ const state = {
   traceStep: 0,
   drag: false,
   idle: 0,
-  t: 0
+  t: 0,
+  layers: Object.fromEntries(LAYERS.map((l) => [l.id, true])),
+  moved: false
 };
 
 const organMeshes = new Map();
@@ -103,6 +114,9 @@ scene.add(key);
 const rim = new THREE.DirectionalLight("#ffb0a8", 0.85);
 rim.position.set(-3, 2, -2);
 scene.add(rim);
+const fill = new THREE.DirectionalLight("#a8c4ff", 0.45);
+fill.position.set(-1, 0.4, 3);
+scene.add(fill);
 
 const clipPlane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 999);
 const scratch = new THREE.Vector3();
@@ -313,14 +327,20 @@ function addHeartVessels(root) {
   root.userData.vessels = true;
 }
 
+function layerOn(organId) {
+  return state.layers[organLayer(organId)] !== false;
+}
+
 function applyBodyView() {
   detailRoot = null;
   for (const g of overlayCache.values()) g.visible = false;
   bodyRoot.traverse((node) => {
     if (!node.isMesh) return;
     if ([...overlayCache.values()].some((g) => g === node || g.children?.includes?.(node))) return;
-    node.visible = true;
     const id = node.userData.organId;
+    const on = layerOn(id);
+    node.visible = on;
+    if (!on) return;
     if (id === "skin") {
       node.material.opacity = 0.1;
       node.material.transparent = true;
@@ -343,7 +363,9 @@ function applyOrganView(organId) {
     if (!node.isMesh) return;
     if ([...overlayCache.values()].some((g) => g === node)) return;
     const id = node.userData.organId;
-    if (id === "skin") {
+    if (!layerOn(id) && id !== organId) {
+      node.visible = false;
+    } else if (id === "skin") {
       node.visible = true;
       node.material.opacity = 0.035;
       node.material.transparent = true;
@@ -417,6 +439,7 @@ function findPinMesh(pin) {
 function buildBodyPins() {
   clearAnchors();
   for (const o of ORGANS) {
+    if (!layerOn(o.id)) continue;
     const c = organCenters.get(o.id);
     if (!c) continue;
     const anchor = new THREE.Object3D();
@@ -496,6 +519,13 @@ function updateTrace(step) {
   bodyRoot.add(traceLine);
 }
 
+function renderCard(pin, def) {
+  const latin = pin.latin ? `<p class="latin">${pin.latin}</p>` : "";
+  const clinical = pin.clinical ? `<p class="clinical">${pin.clinical}</p>` : "";
+  const traceBtn = def.trace ? `<button type="button" id="trace">${def.traceLabel}</button>` : "";
+  return `<p class="kicker">${def.subtitle || def.title}</p><h2>${pin.name}</h2>${latin}<p>${pin.role}</p>${clinical}<p class="remember">${pin.remember}</p><div class="row">${traceBtn}<button type="button" id="prev" class="ghost">Prev</button><button type="button" id="next" class="ghost">Next</button></div>`;
+}
+
 function choosePin(id, tap = false) {
   state.selected = id;
   const def = ORGANS.find((o) => o.id === state.organ);
@@ -506,10 +536,13 @@ function choosePin(id, tap = false) {
   setTimeout(() => callout.classList.remove("pop"), 280);
   card.classList.remove("show");
   requestAnimationFrame(() => {
-    const traceBtn = def.trace ? `<button type="button" id="trace">${def.traceLabel}</button>` : "";
-    card.innerHTML = `<h2>${pin.name}</h2><p>${pin.role}</p><p class="remember">${pin.remember}</p><div class="row">${traceBtn}<button type="button" id="next" class="ghost">Next</button></div>`;
+    card.innerHTML = renderCard(pin, def);
     card.classList.add("show");
     if (def.trace) card.querySelector("#trace").addEventListener("click", followPath);
+    card.querySelector("#prev").addEventListener("click", () => {
+      const i = def.pins.findIndex((p) => p.id === id);
+      choosePin(def.pins[(i - 1 + def.pins.length) % def.pins.length].id, true);
+    });
     card.querySelector("#next").addEventListener("click", () => {
       const i = def.pins.findIndex((p) => p.id === id);
       choosePin(def.pins[(i + 1) % def.pins.length].id, true);
@@ -555,7 +588,8 @@ function followPath() {
 }
 
 function showBodyCard() {
-  card.innerHTML = `<h2>Human Body Atlas</h2><p>Drag to spin the full 3D body. Tap a gold marker or pick a system below — inner organs open with peel animation and study pins.</p><p class="remember">First visit downloads the reference body once (~350 MB), then your browser keeps it.</p>`;
+  const n = allPins().length;
+  card.innerHTML = `<p class="kicker">15 systems · ${n} structures</p><h2>Human Body Atlas</h2><p>Spin the full 3D body. Peel <strong>Skin / Muscle / Bone / Organs</strong> like the reel. Tap a gold pin or search any structure — each card has function, a clinical pearl, and a memory hook.</p><p class="remember">Follow the blood, air, food, or urine on the highlighted path.</p>`;
   card.classList.add("show");
   callout.hidden = true;
 }
@@ -576,8 +610,15 @@ async function focusOrgan(id) {
   titleEl.textContent = def.title;
   hintEl.textContent = "Drag to turn · Pinch to zoom";
   dock.querySelectorAll("button").forEach((b) => b.classList.toggle("on", b.dataset.organ === id));
-  choosePin(def.pins[0].id);
   flyToOrgan(id);
+  card.classList.remove("show");
+  requestAnimationFrame(() => {
+    card.innerHTML = `<p class="kicker">${def.subtitle || def.title}</p><h2>${def.title}</h2><p>${def.intro || "Tap a gold pin on the organ."}</p><p class="remember">${def.pins.length} labelled parts · ${def.trace ? def.traceLabel : "Swipe Next through each structure"}</p><div class="row">${def.trace ? `<button type="button" id="trace">${def.traceLabel}</button>` : ""}<button type="button" id="next" class="ghost">Start tour</button></div>`;
+    card.classList.add("show");
+    if (def.trace) card.querySelector("#trace")?.addEventListener("click", followPath);
+    card.querySelector("#next").addEventListener("click", () => choosePin(def.pins[0].id, true));
+  });
+  callout.hidden = true;
 }
 
 function goBody() {
@@ -622,9 +663,74 @@ dock.addEventListener("click", (e) => {
   const b = e.target.closest("[data-organ]");
   if (b && state.ready) focusOrgan(b.dataset.organ);
 });
-view.addEventListener("pointerdown", () => { state.drag = false; state.idle = 0; });
+layersEl.addEventListener("click", (e) => {
+  const b = e.target.closest("[data-layer]");
+  if (!b || !state.ready) return;
+  const id = b.dataset.layer;
+  state.layers[id] = !state.layers[id];
+  b.classList.toggle("on", state.layers[id]);
+  if (state.mode === "body") {
+    applyBodyView();
+    buildBodyPins();
+  } else if (state.organ) applyOrganView(state.organ);
+});
+
+function hideHits() { hitsEl.classList.remove("show"); hitsEl.innerHTML = ""; }
+searchInput.addEventListener("input", () => {
+  const q = searchInput.value.trim().toLowerCase();
+  if (q.length < 2) { hideHits(); return; }
+  const hits = allPins().filter((p) =>
+    `${p.name} ${p.latin || ""} ${p.organTitle} ${p.role}`.toLowerCase().includes(q)
+  ).slice(0, 8);
+  hitsEl.innerHTML = hits.map((p) =>
+    `<button type="button" data-organ="${p.organId}" data-pin="${p.id}"><b>${p.name}</b><small>${p.organTitle}</small></button>`
+  ).join("") || `<button type="button">No match</button>`;
+  hitsEl.classList.add("show");
+});
+hitsEl.addEventListener("click", async (e) => {
+  const b = e.target.closest("[data-organ]");
+  if (!b) return;
+  hideHits();
+  searchInput.value = "";
+  await focusOrgan(b.dataset.organ);
+  if (b.dataset.pin) choosePin(b.dataset.pin, true);
+});
+document.addEventListener("pointerdown", (e) => {
+  if (!e.target.closest(".search")) hideHits();
+});
+
+const raycaster = new THREE.Raycaster();
+const ndc = new THREE.Vector2();
+view.addEventListener("pointerdown", (e) => {
+  state.moved = false;
+  state.idle = 0;
+  state._px = e.clientX;
+  state._py = e.clientY;
+});
 renderer.domElement.addEventListener("pointerdown", () => { state.drag = true; state.idle = 0; });
-renderer.domElement.addEventListener("pointerup", () => { state.drag = false; });
+renderer.domElement.addEventListener("pointermove", (e) => {
+  if (state.drag && (Math.abs(e.clientX - (state._px || 0)) > 8 || Math.abs(e.clientY - (state._py || 0)) > 8)) state.moved = true;
+});
+renderer.domElement.addEventListener("pointerup", (e) => {
+  const wasDrag = state.drag;
+  state.drag = false;
+  if (!state.ready || !wasDrag || state.moved) return;
+  const r = renderer.domElement.getBoundingClientRect();
+  ndc.x = ((e.clientX - r.left) / r.width) * 2 - 1;
+  ndc.y = -((e.clientY - r.top) / r.height) * 2 + 1;
+  raycaster.setFromCamera(ndc, camera);
+  const meshes = [];
+  bodyRoot?.traverse((n) => { if (n.isMesh && n.visible) meshes.push(n); });
+  const hit = raycaster.intersectObjects(meshes, false)[0];
+  if (!hit) return;
+  const id = hit.object.userData.organId;
+  if (state.mode === "body" && ORGANS.some((o) => o.id === id)) focusOrgan(id);
+  else if (state.mode === "organ" && state.organ) {
+    const def = ORGANS.find((o) => o.id === state.organ);
+    const pin = def.pins.find((p) => p.match.test(hit.object.userData.nodeName || ""));
+    if (pin) choosePin(pin.id, true);
+  }
+});
 
 const placeholder = buildPlaceholderBody();
 loading.hidden = false;

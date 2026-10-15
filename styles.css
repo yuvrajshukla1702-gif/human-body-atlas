@@ -13,7 +13,7 @@ button { font: inherit; color: inherit; cursor: pointer; border: 0; }
 #view canvas { display: block; width: 100%; height: 100%; touch-action: none; }
 
 .hud { position: fixed; inset: 0; pointer-events: none; z-index: 2; }
-.hud button, .hud .card { pointer-events: auto; }
+.hud button, .hud .card, .hud input, .hud .layers, .hud .search, .hud .dock { pointer-events: auto; }
 
 .topbar {
   position: absolute;
@@ -51,6 +51,68 @@ button { font: inherit; color: inherit; cursor: pointer; border: 0; }
   letter-spacing: 0.02em;
 }
 .brand span { color: var(--muted); font-size: 11px; }
+
+.search {
+  position: absolute;
+  top: calc(56px + env(safe-area-inset-top));
+  right: 16px;
+  width: min(260px, 46vw);
+}
+.search input {
+  width: 100%;
+  border: 0;
+  border-radius: 999px;
+  padding: 8px 14px;
+  background: rgba(14, 14, 18, 0.88);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  backdrop-filter: blur(10px);
+  outline: none;
+}
+.search input::placeholder { color: #8a857c; }
+.hits {
+  margin-top: 6px;
+  max-height: 220px;
+  overflow: auto;
+  border-radius: 12px;
+  background: rgba(12, 12, 14, 0.94);
+  display: none;
+}
+.hits.show { display: block; }
+.hits button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 10px 12px;
+  background: transparent;
+  font-size: 13px;
+}
+.hits button:hover, .hits button:focus { background: rgba(245, 197, 66, 0.12); }
+.hits small { display: block; color: var(--muted); font-size: 11px; }
+
+.layers {
+  position: absolute;
+  top: calc(56px + env(safe-area-inset-top));
+  left: 16px;
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  max-width: 48%;
+}
+.layers button {
+  border-radius: 999px;
+  padding: 7px 11px;
+  font-size: 12px;
+  background: rgba(14, 14, 18, 0.78);
+  border: 1px solid rgba(255,255,255,0.12);
+  backdrop-filter: blur(8px);
+}
+.layers button.on {
+  border-color: rgba(245,197,66,0.85);
+  color: #ffe9a8;
+  background: rgba(40, 32, 10, 0.85);
+}
 
 @keyframes pinPulse {
   0%, 100% { box-shadow: 0 0 0 4px rgba(0,0,0,.4), 0 0 10px rgba(245,197,66,.2); }
@@ -113,25 +175,36 @@ button { font: inherit; color: inherit; cursor: pointer; border: 0; }
   left: 16px;
   right: 16px;
   bottom: calc(58px + env(safe-area-inset-bottom));
-  max-width: 420px;
-  background: rgba(14, 14, 16, 0.88);
+  max-width: 440px;
+  max-height: min(42vh, 340px);
+  overflow: auto;
+  background: rgba(14, 14, 16, 0.9);
   border-radius: 16px;
   padding: 16px 18px 18px;
-  backdrop-filter: blur(12px);
+  backdrop-filter: blur(14px);
   opacity: 0;
   transform: translateY(14px);
   transition: opacity 0.35s ease, transform 0.35s ease;
 }
 .card.show, .reel-card.show { opacity: 1; transform: translateY(0); }
+.card .kicker {
+  margin: 0 0 6px;
+  color: #c9b27a;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
 .card h2, .reel-card h2 {
   margin: 0 0 8px;
   font-family: Palatino, Georgia, serif;
   font-size: 26px;
   font-weight: 400;
 }
+.card .latin { margin: -4px 0 8px; color: #9a948a; font-size: 13px; font-style: italic; }
 .card p, .reel-card p { margin: 0; line-height: 1.45; color: #e8e2d8; font-size: 15px; }
-.card .remember, .reel-card .remember { margin-top: 10px; color: #ffe7a3; font-size: 14px; }
-.card .row, .reel-card .row { display: flex; gap: 10px; margin-top: 14px; flex-wrap: wrap; }
+.card .clinical { margin-top: 8px; color: #c8d8f0; font-size: 13.5px; }
+.card .remember, .reel-card .remember { margin-top: 8px; color: #ffe7a3; font-size: 14px; }
+.card .row, .reel-card .row { display: flex; gap: 8px; margin-top: 14px; flex-wrap: wrap; }
 .card .row button, .reel-card .row button {
   border-radius: 999px;
   padding: 10px 16px;
@@ -189,18 +262,11 @@ button { font: inherit; color: inherit; cursor: pointer; border: 0; }
 }
 .dock button.on { border-color: rgba(245,197,66,0.85); color: #ffe9a8; }
 
-.credit {
-  position: absolute;
-  right: 16px;
-  bottom: calc(52px + env(safe-area-inset-bottom));
-  font-size: 10px;
-  color: #6e6a64;
-  pointer-events: none;
-}
-
 @media (max-width: 700px) {
   .brand { display: none; }
   .pill { padding: 8px 12px; font-size: 13px; }
-  .reel-card, .card { max-width: none; bottom: calc(22px + env(safe-area-inset-bottom)); }
-  .credit { display: none; }
+  .search { width: min(200px, 42vw); }
+  .layers { max-width: 52%; }
+  .layers button { padding: 6px 9px; font-size: 11px; }
+  .reel-card, .card { max-width: none; bottom: calc(58px + env(safe-area-inset-bottom)); max-height: 38vh; }
 }
