@@ -4,6 +4,7 @@ import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { ORGANS, LAYERS, matchOrgan, organLayer, allPins } from "./organs-catalog.js";
 import { MODELS } from "./assets.js";
 import { parts } from "./parts-data.js";
+import { buildAnatomy, implant } from "./anatomy-rig.js";
 
 const PARTS_KEY = { digestion: "gut" };
 function partPack(organId) {
@@ -100,7 +101,8 @@ try {
 const scene = new THREE.Scene();
 scene.background = new THREE.Color("#050506");
 
-const camera = new THREE.PerspectiveCamera(28, 1, 0.02, 80);
+const camera = new THREE.PerspectiveCamera(32, 1, 0.05, 200);
+camera.position.set(0, 1.1, 3.4);
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
 controls.dampingFactor = 0.065;
@@ -221,27 +223,23 @@ function flyCamera(target, pad = 1.38) {
   };
 }
 
-function buildPlaceholderBody() {
-  const g = new THREE.Group();
-  const skin = new THREE.MeshStandardMaterial({ color: "#c9957a", roughness: 0.7 });
-  const head = new THREE.Mesh(new THREE.SphereGeometry(0.13, 24, 18), skin);
-  head.position.set(0, 1.58, 0);
-  g.add(head);
-  const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.24, 0.55, 8, 16), skin);
-  torso.position.set(0, 1.12, 0);
-  g.add(torso);
-  for (const s of [-1, 1]) {
-    const leg = new THREE.Mesh(new THREE.CapsuleGeometry(0.07, 0.52, 6, 12), skin);
-    leg.position.set(s * 0.11, 0.35, 0);
-    g.add(leg);
-    const arm = new THREE.Mesh(new THREE.CapsuleGeometry(0.05, 0.4, 6, 12), skin);
-    arm.position.set(s * 0.31, 1.17, 0);
-    arm.rotation.z = s * 0.35;
-    g.add(arm);
+function registerRig(root) {
+  root.traverse((node) => {
+    if (!node.isMesh) return;
+    const id = node.userData.organId || "other";
+    node.material = node.material.clone();
+    organMeshes.get(id)?.push(node);
+  });
+  for (const o of ORGANS) {
+    const list = organMeshes.get(o.id);
+    if (!list?.length) continue;
+    const box = new THREE.Box3();
+    list.forEach((m) => box.expandByObject(m));
+    if (!box.isEmpty()) {
+      organCenters.set(o.id, box.getCenter(new THREE.Vector3()));
+      organBoxes.set(o.id, box.clone());
+    }
   }
-  scene.add(g);
-  snapCamera(g, 1.55);
-  return g;
 }
 
 function flyToOrgan(organId) {
@@ -309,9 +307,9 @@ async function ensureDetail(organId) {
     }
     loading.hidden = state.ready;
   }
-  alignDetail(group, organId);
+  if (!group.userData.implanted) alignDetail(group, organId);
   if (!group.parent) bodyRoot.add(group);
-  group.visible = false;
+  group.visible = group.userData.implanted ? true : false;
   return group;
 }
 
@@ -333,9 +331,10 @@ function layerOn(organId) {
 
 function applyBodyView() {
   detailRoot = null;
-  for (const g of overlayCache.values()) g.visible = false;
+  for (const g of overlayCache.values()) g.visible = !!g.userData.implanted;
   bodyRoot.traverse((node) => {
     if (!node.isMesh) return;
+    if (node.userData.replaced) { node.visible = false; return; }
     if ([...overlayCache.values()].some((g) => g === node || g.children?.includes?.(node))) return;
     const id = node.userData.organId;
     const on = layerOn(id);
@@ -732,40 +731,74 @@ renderer.domElement.addEventListener("pointerup", (e) => {
   }
 });
 
-const placeholder = buildPlaceholderBody();
-loading.hidden = false;
+bodyRoot = buildAnatomy(THREE);
+scene.add(bodyRoot);
+registerRig(bodyRoot);
+applyBodyView();
+buildBodyPins();
+showBodyCard();
+state.ready = true;
+loading.hidden = true;
+hintEl.textContent = "Drag to turn · Tap a pin";
+snapCamera(bodyRoot, 1.42);
+const fit0 = fitBox(bodyRoot, 1.42);
+controls.minDistance = fit0.dist * 0.28;
+controls.maxDistance = fit0.dist * 2.6;
+controls.target.copy(fit0.center);
+
+function loadDetail(key, organId, size) {
+  const url = MODELS[key];
+  if (!url) return;
+  loader.load(
+    url,
+    (gltf) => {
+      styleDetail(gltf.scene, organId);
+      overlayCache.set(organId, gltf.scene);
+      implant(THREE, bodyRoot, organId, gltf.scene, size);
+      const list = [];
+      gltf.scene.traverse((n) => { if (n.isMesh) list.push(n); });
+      organMeshes.set(organId, [...(organMeshes.get(organId) || []), ...list]);
+      const box = new THREE.Box3().setFromObject(gltf.scene);
+      organCenters.set(organId, box.getCenter(new THREE.Vector3()));
+      organBoxes.set(organId, box.clone());
+      if (state.mode === "body") buildBodyPins();
+      hintEl.textContent = `${ORGANS.find((o) => o.id === organId)?.title || organId} model ready`;
+    },
+    (xhr) => {
+      if (xhr.total) hintEl.textContent = `Loading ${organId} ${Math.round((100 * xhr.loaded) / xhr.total)}%`;
+    },
+    (err) => console.warn("organ load", organId, err)
+  );
+}
+
+loadDetail("heart", "heart", 0.2);
+loadDetail("lung", "lungs", 0.32);
+loadDetail("liver", "digestion", 0.18);
+loadDetail("pancreas", "endocrine", 0.12);
+loadDetail("bladder", "kidneys", 0.1);
 
 loader.load(
   MODELS.united,
   (gltf) => {
-    placeholder.visible = false;
+    const old = bodyRoot;
     bodyRoot = gltf.scene;
     scene.add(bodyRoot);
+    ORGANS.forEach((o) => organMeshes.set(o.id, []));
+    organMeshes.set("skin", []);
+    organMeshes.set("other", []);
     indexModel(bodyRoot);
     normalizeRoot(bodyRoot);
     applyBodyView();
     buildBodyPins();
-    showBodyCard();
-    state.ready = true;
-    loading.hidden = true;
-    hintEl.textContent = "Tap a gold marker on the body";
-    snapCamera(bodyRoot, 1.45);
-    flyCamera(bodyRoot, 1.45);
-    const fit = fitBox(bodyRoot, 1.45);
-    controls.minDistance = fit.dist * 0.35;
-    controls.maxDistance = fit.dist * 2.2;
-    for (const o of ORGANS.filter((x) => x.detailKey)) {
-      const url = MODELS[o.detailKey];
-      if (url) loader.loadAsync(url).then((g) => { styleDetail(g.scene, o.id); overlayCache.set(o.id, g.scene); }).catch(() => {});
-    }
+    old.removeFromParent();
+    snapCamera(bodyRoot, 1.4);
+    hintEl.textContent = "Full reference body loaded";
+    const fit = fitBox(bodyRoot, 1.4);
+    controls.minDistance = fit.dist * 0.3;
+    controls.maxDistance = fit.dist * 2.4;
   },
-  (xhr) => {
-    if (xhr.total) loadtext.textContent = `Loading body ${Math.round((100 * xhr.loaded) / xhr.total)}%…`;
-  },
-  (err) => {
-    loadtext.textContent = "Load failed — check internet or use ?local=1 on your PC.";
-    console.error(err);
-  }
+  undefined,
+  () => {}
 );
 
 function resize() {
@@ -778,12 +811,14 @@ function resize() {
 addEventListener("resize", resize);
 resize();
 
+const clock = new THREE.Clock();
 function frame() {
   requestAnimationFrame(frame);
-  state.t += 0.016;
+  const dt = Math.min(clock.getDelta(), 0.05);
+  state.t += dt;
 
   if (camAnim) {
-    camAnim.t += 0.016 / camAnim.dur;
+    camAnim.t += dt / camAnim.dur;
     const k = Math.min(camAnim.t, 1);
     const e = 1 - Math.pow(1 - k, 3);
     camera.position.lerpVectors(camAnim.fromP, camAnim.toP, e);
@@ -792,14 +827,14 @@ function frame() {
   }
 
   if (popIn?.obj) {
-    popIn.t = Math.min(popIn.t + 0.016 / 0.75, 1);
+    popIn.t = Math.min(popIn.t + dt / 0.75, 1);
     const k = 1 - Math.pow(1 - popIn.t, 3);
     popIn.obj.scale.setScalar(popIn.from + (popIn.to - popIn.from) * k);
     if (popIn.t >= 1) popIn = null;
   }
 
   if (detailRoot && peel.t < 1) {
-    peel.t = Math.min(peel.t + 0.016 / 0.85, 1);
+    peel.t = Math.min(peel.t + dt / 0.85, 1);
     const k = 1 - Math.pow(1 - peel.t, 2);
     const op = peel.from + (peel.to - peel.from) * k;
     detailRoot.traverse((node) => {
@@ -810,24 +845,30 @@ function frame() {
     });
   }
 
-  const spinTarget = state.ready && bodyRoot?.visible ? bodyRoot : placeholder?.visible ? placeholder : null;
-  if (spinTarget && state.mode === "body" && !state.drag && !camAnim) {
-    state.idle += 0.016;
-    if (state.ready && bodyRoot) {
-      const breath = 1 + Math.sin(state.t * 1.2) * 0.008;
-      bodyRoot.scale.set(1, breath, 1);
+  if (bodyRoot) {
+    const breath = 1 + Math.sin(state.t * 1.6) * 0.035;
+    const beat = 1 + Math.max(0, Math.sin(state.t * 7.2)) ** 8 * 0.1;
+    bodyRoot.traverse((n) => {
+      if (!n.isMesh && !n.isGroup) return;
+      if (n.userData.breath) n.scale.y = (n.userData._sy || (n.userData._sy = n.scale.y)) * breath;
+      if (n.userData.beat) {
+        const base = n.userData.baseScale || 1;
+        n.scale.setScalar(base * beat);
+      }
+    });
+    if (!state.drag && !camAnim) {
+      bodyRoot.rotation.y += dt * (state.mode === "body" ? 0.22 : 0.08);
     }
-    if (state.idle > 2.5) spinTarget.rotation.y += 0.0018;
   }
 
-  if (state.mode === "organ" && state.organ && !state.drag) {
-    const pulse = 0.35 + Math.sin(state.t * 3.2) * 0.15;
+  if (state.mode === "organ" && state.organ) {
+    const pulse = 0.45 + Math.sin(state.t * 4) * 0.35;
     for (const m of activeMeshes()) {
-      if (m.material.emissiveIntensity > 0.5) m.material.emissiveIntensity = pulse;
+      if (m.material?.emissiveIntensity > 0.4) m.material.emissiveIntensity = pulse;
     }
   }
 
-  if (traceLine?.material) traceLine.material.opacity = 0.5 + Math.sin(state.t * 5) * 0.4;
+  if (traceLine?.material) traceLine.material.opacity = 0.45 + Math.sin(state.t * 6) * 0.45;
 
   controls.update();
   placePins();
