@@ -112,7 +112,7 @@ button { font: inherit; color: inherit; cursor: pointer; border: 0; }
   position: absolute;
   left: 16px;
   right: 16px;
-  bottom: calc(58px + env(safe-area-inset-bottom));
+  bottom: calc(18px + env(safe-area-inset-bottom));
   max-width: 420px;
   background: rgba(14, 14, 16, 0.88);
   border-radius: 16px;
@@ -201,6 +201,6 @@ button { font: inherit; color: inherit; cursor: pointer; border: 0; }
 @media (max-width: 700px) {
   .brand { display: none; }
   .pill { padding: 8px 12px; font-size: 13px; }
-  .reel-card, .card { max-width: none; bottom: calc(64px + env(safe-area-inset-bottom)); }
+  .reel-card, .card { max-width: none; bottom: calc(22px + env(safe-area-inset-bottom)); }
   .credit { display: none; }
 }
