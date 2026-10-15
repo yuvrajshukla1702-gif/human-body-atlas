@@ -3,6 +3,12 @@ import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { ORGANS, matchOrgan } from "./organs-catalog.js";
 import { MODELS } from "./assets.js";
+import { parts } from "./parts-data.js";
+
+const PARTS_KEY = { digestion: "gut" };
+function partPack(organId) {
+  return parts[PARTS_KEY[organId] || organId];
+}
 
 const app = document.getElementById("app");
 app.innerHTML = `
@@ -17,8 +23,7 @@ app.innerHTML = `
     <div class="callout pill-dark" id="callout" hidden></div>
     <section class="card reel-card show" id="card"></section>
     <nav class="dock" id="dock"></nav>
-    <div class="loading" id="loading"><div class="spin"></div><p id="loadtext">Loading body…</p></div>
-    <p class="credit">HuBMAP CC BY 4.0 · Works on any network when hosted online</p>
+    <div class="loading" id="loading"><div class="spin"></div><p id="loadtext">Loading 3D body…</p></div>
   </div>
 `;
 
@@ -64,13 +69,22 @@ let peel = { t: 1 };
 let popIn = null;
 let camAnim = null;
 
-const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
+const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance", failIfMajorPerformanceCaveat: false });
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.1;
+renderer.toneMappingExposure = 1.12;
 renderer.localClippingEnabled = true;
 view.append(renderer.domElement);
+
+try {
+  const probe = document.createElement("canvas");
+  if (!probe.getContext("webgl2") && !probe.getContext("webgl")) {
+    loadtext.textContent = "WebGL is off — enable hardware acceleration in browser settings.";
+  }
+} catch {
+  loadtext.textContent = "WebGL unavailable on this device.";
+}
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color("#050506");
@@ -115,13 +129,10 @@ function partColor(name) {
 
 function mat(organId, name) {
   const isSkin = organId === "skin";
-  return new THREE.MeshPhysicalMaterial({
+  return new THREE.MeshStandardMaterial({
     color: partColor(name),
-    roughness: isSkin ? 0.62 : 0.34,
-    metalness: 0,
-    clearcoat: isSkin ? 0.06 : 0.48,
-    sheen: 0.45,
-    sheenColor: new THREE.Color("#ffc8c8"),
+    roughness: isSkin ? 0.72 : 0.42,
+    metalness: 0.02,
     emissive: new THREE.Color(0x000000),
     emissiveIntensity: 0,
     transparent: false,
@@ -177,6 +188,13 @@ function fitBox(object, pad = 1.38) {
   return { center, dist };
 }
 
+function snapCamera(target, pad = 1.38) {
+  const fit = fitBox(target, pad);
+  camera.position.set(fit.center.x + fit.dist * 0.04, fit.center.y, fit.center.z + fit.dist);
+  controls.target.copy(fit.center);
+  controls.update();
+}
+
 function flyCamera(target, pad = 1.38) {
   const fit = fitBox(target, pad);
   camAnim = {
@@ -187,6 +205,29 @@ function flyCamera(target, pad = 1.38) {
     fromT: controls.target.clone(),
     toT: fit.center.clone()
   };
+}
+
+function buildPlaceholderBody() {
+  const g = new THREE.Group();
+  const skin = new THREE.MeshStandardMaterial({ color: "#c9957a", roughness: 0.7 });
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.13, 24, 18), skin);
+  head.position.set(0, 1.58, 0);
+  g.add(head);
+  const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.24, 0.55, 8, 16), skin);
+  torso.position.set(0, 1.12, 0);
+  g.add(torso);
+  for (const s of [-1, 1]) {
+    const leg = new THREE.Mesh(new THREE.CapsuleGeometry(0.07, 0.52, 6, 12), skin);
+    leg.position.set(s * 0.11, 0.35, 0);
+    g.add(leg);
+    const arm = new THREE.Mesh(new THREE.CapsuleGeometry(0.05, 0.4, 6, 12), skin);
+    arm.position.set(s * 0.31, 1.17, 0);
+    arm.rotation.z = s * 0.35;
+    g.add(arm);
+  }
+  scene.add(g);
+  snapCamera(g, 1.55);
+  return g;
 }
 
 function flyToOrgan(organId) {
@@ -242,10 +283,16 @@ async function ensureDetail(organId) {
   if (!group) {
     loadtext.textContent = `Loading inner ${def.title}…`;
     loading.hidden = false;
-    const gltf = await loader.loadAsync(url);
-    group = gltf.scene;
-    styleDetail(group, organId);
-    overlayCache.set(organId, group);
+    try {
+      const gltf = await loader.loadAsync(url);
+      group = gltf.scene;
+      styleDetail(group, organId);
+      overlayCache.set(organId, group);
+    } catch (e) {
+      console.warn("Detail model failed", organId, e);
+      loading.hidden = state.ready;
+      return null;
+    }
     loading.hidden = state.ready;
   }
   alignDetail(group, organId);
@@ -385,13 +432,23 @@ function buildBodyPins() {
   }
 }
 
+function pinPosition(def, pin, center, hit) {
+  if (hit?.c) return hit.c.clone();
+  const pack = partPack(def.id);
+  const fallback = pack?.pins?.find((p) => p.id === pin.id);
+  if (fallback?.at) {
+    return new THREE.Vector3(center.x + fallback.at[0], center.y + fallback.at[1], center.z + fallback.at[2]);
+  }
+  return center.clone();
+}
+
 function buildOrganPins(def) {
   clearAnchors();
   const center = (detailRoot ? new THREE.Box3().setFromObject(detailRoot) : organBoxes.get(def.id) || new THREE.Box3()).getCenter(new THREE.Vector3());
   for (const pin of def.pins) {
     const hit = findPinMesh(pin);
     const anchor = new THREE.Object3D();
-    anchor.position.copy(hit?.c || center);
+    anchor.position.copy(pinPosition(def, pin, center, hit));
     bodyRoot.add(anchor);
     const btn = document.createElement("button");
     btn.className = "pin" + (pin.vein ? " vein" : "");
@@ -422,13 +479,15 @@ function updateTrace(step) {
   }
   const def = ORGANS.find((o) => o.id === state.organ);
   if (!def?.trace || step < 1) return;
-  const pts = def.trace.slice(0, step + 1).map((id) => {
+  const pts = [];
+  for (const id of def.trace.slice(0, step + 1)) {
     const a = anchors.find((x) => x.pin?.id === id);
+    if (!a) continue;
     const p = new THREE.Vector3();
     a.anchor.getWorldPosition(p);
     bodyRoot.worldToLocal(p);
-    return p;
-  });
+    pts.push(p);
+  }
   if (pts.length < 2) return;
   traceLine = new THREE.Mesh(
     new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 56, 0.007, 8, false),
@@ -496,7 +555,7 @@ function followPath() {
 }
 
 function showBodyCard() {
-  card.innerHTML = `<h2>Human Body Atlas</h2><p>Spin the full 3D body. Tap a gold marker or a chip below — same flow as the reel, for every organ.</p><p class="remember">Hosted online: works on mobile data or any Wi‑Fi. First visit downloads the body once, then caches.</p>`;
+  card.innerHTML = `<h2>Human Body Atlas</h2><p>Drag to spin the full 3D body. Tap a gold marker or pick a system below — inner organs open with peel animation and study pins.</p><p class="remember">First visit downloads the reference body once (~350 MB), then your browser keeps it.</p>`;
   card.classList.add("show");
   callout.hidden = true;
 }
@@ -510,6 +569,7 @@ async function focusOrgan(id) {
   const def = ORGANS.find((o) => o.id === id);
   detailRoot = await ensureDetail(id);
   if (detailRoot) (organMeshes.get(id) || []).forEach((m) => { m.visible = false; });
+  else peel = { t: 1 };
   applyOrganView(id);
   buildOrganPins(def);
   backBtn.hidden = false;
@@ -566,9 +626,13 @@ view.addEventListener("pointerdown", () => { state.drag = false; state.idle = 0;
 renderer.domElement.addEventListener("pointerdown", () => { state.drag = true; state.idle = 0; });
 renderer.domElement.addEventListener("pointerup", () => { state.drag = false; });
 
+const placeholder = buildPlaceholderBody();
+loading.hidden = false;
+
 loader.load(
   MODELS.united,
   (gltf) => {
+    placeholder.visible = false;
     bodyRoot = gltf.scene;
     scene.add(bodyRoot);
     indexModel(bodyRoot);
@@ -579,10 +643,9 @@ loader.load(
     state.ready = true;
     loading.hidden = true;
     hintEl.textContent = "Tap a gold marker on the body";
+    snapCamera(bodyRoot, 1.45);
     flyCamera(bodyRoot, 1.45);
     const fit = fitBox(bodyRoot, 1.45);
-    controls.target.copy(fit.center);
-    camera.position.set(fit.center.x, fit.center.y, fit.center.z + fit.dist);
     controls.minDistance = fit.dist * 0.35;
     controls.maxDistance = fit.dist * 2.2;
     for (const o of ORGANS.filter((x) => x.detailKey)) {
@@ -641,11 +704,14 @@ function frame() {
     });
   }
 
-  if (state.ready && state.mode === "body" && !state.drag && !camAnim) {
+  const spinTarget = state.ready && bodyRoot?.visible ? bodyRoot : placeholder?.visible ? placeholder : null;
+  if (spinTarget && state.mode === "body" && !state.drag && !camAnim) {
     state.idle += 0.016;
-    const breath = 1 + Math.sin(state.t * 1.2) * 0.008;
-    bodyRoot.scale.y = breath;
-    if (state.idle > 2.5) bodyRoot.rotation.y += 0.001;
+    if (state.ready && bodyRoot) {
+      const breath = 1 + Math.sin(state.t * 1.2) * 0.008;
+      bodyRoot.scale.set(1, breath, 1);
+    }
+    if (state.idle > 2.5) spinTarget.rotation.y += 0.0018;
   }
 
   if (state.mode === "organ" && state.organ && !state.drag) {

@@ -112,7 +112,7 @@ button { font: inherit; color: inherit; cursor: pointer; border: 0; }
   position: absolute;
   left: 16px;
   right: 16px;
-  bottom: calc(18px + env(safe-area-inset-bottom));
+  bottom: calc(58px + env(safe-area-inset-bottom));
   max-width: 420px;
   background: rgba(14, 14, 16, 0.88);
   border-radius: 16px;
