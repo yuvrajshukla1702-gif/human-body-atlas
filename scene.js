@@ -168,26 +168,16 @@ export function createScene(host, handlers = {}) {
     state.isolated = organId;
     refreshVisibility();
     const list = organMeshes.get(organId) || [];
-    if (list.length) {
-      const g = new THREE.Group();
-      list.forEach((m) => g.add(m.clone()));
-      const box = new THREE.Box3();
-      list.forEach((m) => box.expandByObject(m));
-      const helper = new THREE.Object3D();
-      helper.position.copy(box.getCenter(new THREE.Vector3()));
-      fit({ traverse: (fn) => list.forEach(fn), isObject3D: true, ...{} } , 1.25);
-      const dummy = new THREE.Box3().setFromPoints(list.map((m) => {
-        const b = new THREE.Box3().setFromObject(m);
-        return b.getCenter(new THREE.Vector3());
-      }));
-      if (!dummy.isEmpty()) {
-        const size = dummy.getSize(new THREE.Vector3());
-        const center = dummy.getCenter(new THREE.Vector3());
-        const dist = Math.max(size.length(), 0.18) * 1.6;
-        camera.position.set(center.x + dist * 0.1, center.y, center.z + dist);
-        controls.target.copy(center);
-      }
-    }
+    if (!list.length) return;
+    const box = new THREE.Box3();
+    list.forEach((m) => box.expandByObject(m));
+    if (box.isEmpty()) return;
+    const size = box.getSize(new THREE.Vector3());
+    const center = box.getCenter(new THREE.Vector3());
+    const dist = Math.max(size.length(), 0.12) * 1.35;
+    camera.position.set(center.x + dist * 0.12, center.y, center.z + dist);
+    controls.target.copy(center);
+    controls.update();
   }
 
   function explode(amount) {
@@ -228,6 +218,7 @@ export function createScene(host, handlers = {}) {
       if (xhr.total) onProgress?.(xhr.loaded / xhr.total);
     });
     const group = gltf.scene;
+    group.userData.detail = true;
     group.traverse((node) => {
       if (!node.isMesh) return;
       node.userData.organId = organId;
@@ -246,11 +237,12 @@ export function createScene(host, handlers = {}) {
   }
 
   function restoreBody() {
-    scene.children.filter((c) => c !== state.root && c.isObject3D && c.type === "Group" && c !== scene).forEach((g) => {
-      if (g !== state.root && g.userData?.detail) g.removeFromParent();
+    scene.children.slice().forEach((child) => {
+      if (child.userData?.detail) child.removeFromParent();
     });
     if (state.root) {
       state.root.visible = true;
+      state.root.rotation.y = 0;
       state.isolated = null;
       refreshVisibility();
       fit(state.root, 1.38);

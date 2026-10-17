@@ -299,13 +299,26 @@ function escapeHtml(value) {
   return String(value || "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }
 
+function markSystem() {
+  app.querySelectorAll(".system[data-organ]").forEach((b) => {
+    b.classList.toggle("active", b.dataset.organ === state.organ);
+  });
+}
+
 async function openOrgan(id, pinId) {
   state.page = "explore";
   state.organ = id;
   state.pin = pinId || null;
   const organ = currentOrgan();
+  refreshPanel();
+  markSystem();
+  if (organ) setStage(organ.title, organ.intro);
   if (!viewer?.state.ready) return;
-  viewer.isolate(id);
+  try {
+    viewer.isolate(id);
+  } catch (err) {
+    console.warn(err);
+  }
   if (organ?.detailKey && MODELS_HAS(id)) {
     try {
       if (detailGroup) { detailGroup.removeFromParent(); detailGroup = null; }
@@ -315,12 +328,8 @@ async function openOrgan(id, pinId) {
       toast("Detail model not found — using the body mesh.");
     }
   }
-  if (state.pin) {
-    const pin = currentPin();
-    viewer.highlight(id, pin);
-  } else viewer.highlight(id);
-  refreshPanel();
-  setStage(organ.title, organ.intro);
+  if (state.pin) viewer.highlight(id, currentPin());
+  else viewer.highlight(id);
 }
 
 function MODELS_HAS(id) {
@@ -512,23 +521,30 @@ async function mountViewer() {
   }
 }
 
-let viewerMounted = false;
-async function boot(rebuild = true) {
-  if (rebuild || !document.querySelector(".shell")) {
-    renderShell();
-    bindChrome();
-    bindPanel();
-    viewerMounted = false;
-    viewer = null;
-    detailGroup = null;
-  } else {
-    renderShell();
-    bindChrome();
-    bindPanel();
-    viewer = null;
-    viewerMounted = false;
+let parkedHost = null;
+async function boot() {
+  const liveHost = document.getElementById("canvas-host");
+  if (liveHost && viewer) {
+    parkedHost = liveHost;
+    parkedHost.remove();
   }
-  if (state.page === "explore") await mountViewer();
+  renderShell();
+  bindChrome();
+  bindPanel();
+  markSystem();
+  if (state.organ) {
+    const organ = currentOrgan();
+    if (organ) setStage(organ.title, organ.intro);
+  }
+  if (state.page === "explore") {
+    const slot = document.getElementById("canvas-host");
+    if (viewer && parkedHost && slot) {
+      slot.replaceWith(parkedHost);
+      document.getElementById("loading")?.setAttribute("hidden", "");
+    } else {
+      await mountViewer();
+    }
+  }
   refreshOffline();
 }
 
@@ -537,6 +553,7 @@ if ("serviceWorker" in navigator) {
 }
 
 boot();
+window.__atlas = { get viewer() { return viewer; }, state, ORGANS };
 document.addEventListener("keydown", (e) => {
   if (e.key === "/" && document.activeElement?.tagName !== "INPUT") {
     e.preventDefault();
