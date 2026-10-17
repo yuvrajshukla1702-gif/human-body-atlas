@@ -1,0 +1,19 @@
+{
+  "id": "./",
+  "name": "Anatomy Studio — Human Body Atlas",
+  "short_name": "Anatomy",
+  "description": "Explore human anatomy in an interactive 3D study atlas.",
+  "lang": "en",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#09100f",
+  "theme_color": "#09100f",
+  "categories": ["education", "medical"],
+  "icons": [
+    { "src": "./icons/anatomy-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "./icons/anatomy-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" },
+    { "src": "./icons/anatomy.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}

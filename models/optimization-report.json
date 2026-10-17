@@ -1,0 +1,90 @@
+[
+  {
+    "input": "united-female.glb",
+    "output": "optimized-body.glb",
+    "ratio": 0.22,
+    "error": 0.001,
+    "bytes": 19776476,
+    "sourceStats": {
+      "meshes": 956,
+      "nodes": 1160,
+      "vertices": 10721074,
+      "triangles": 7756626,
+      "primitives": 956
+    },
+    "optimizedStats": {
+      "meshes": 956,
+      "nodes": 1182,
+      "vertices": 2083211,
+      "triangles": 3118539,
+      "primitives": 956
+    },
+    "sourceBytes": 374505632
+  },
+  {
+    "input": "heart.glb",
+    "output": "optimized-heart.glb",
+    "ratio": 0.65,
+    "error": 0.0005,
+    "bytes": 327592,
+    "sourceStats": {
+      "meshes": 14,
+      "nodes": 18,
+      "vertices": 43560,
+      "triangles": 85914,
+      "primitives": 14
+    },
+    "optimizedStats": {
+      "meshes": 14,
+      "nodes": 18,
+      "vertices": 33905,
+      "triangles": 66681,
+      "primitives": 14
+    },
+    "sourceBytes": 1745560
+  },
+  {
+    "input": "lung.glb",
+    "output": "optimized-lung.glb",
+    "ratio": 0.3,
+    "error": 0.001,
+    "bytes": 661596,
+    "sourceStats": {
+      "meshes": 56,
+      "nodes": 75,
+      "vertices": 517602,
+      "triangles": 297097,
+      "primitives": 56
+    },
+    "optimizedStats": {
+      "meshes": 56,
+      "nodes": 75,
+      "vertices": 59938,
+      "triangles": 113981,
+      "primitives": 56
+    },
+    "sourceBytes": 23255188
+  },
+  {
+    "input": "liver.glb",
+    "output": "optimized-liver.glb",
+    "ratio": 0.45,
+    "error": 0.001,
+    "bytes": 241236,
+    "sourceStats": {
+      "meshes": 26,
+      "nodes": 33,
+      "vertices": 48116,
+      "triangles": 93303,
+      "primitives": 26
+    },
+    "optimizedStats": {
+      "meshes": 26,
+      "nodes": 34,
+      "vertices": 23262,
+      "triangles": 44164,
+      "primitives": 26
+    },
+    "sourceBytes": 1738552
+  }
+]

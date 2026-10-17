@@ -1,2 +1,7 @@
-models/*.glb
+models/united*.glb
+models/heart.glb
+models/lung.glb
+models/liver.glb
+models/heart-detail.glb
 .DS_Store
+_test.png
